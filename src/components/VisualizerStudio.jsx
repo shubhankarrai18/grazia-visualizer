@@ -16,7 +16,7 @@ function VisualizerStudio({ onAddToCart }) {
   }
 
   return (
-    <div className="visualizer-studio">
+    <div className="visualizer-studio visualizer-studio--wide">
       <aside className="visualizer-sidebar">
         <div className="visualizer-sidebar-header">
           <span className="step-label">Step 3 of 3</span>

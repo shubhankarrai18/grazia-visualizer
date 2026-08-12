@@ -65,7 +65,7 @@ function CategorySelector({ onSelectMarble }) {
   }
 
   return (
-    <div className="category-selector">
+    <div className="category-selector category-selector--wide">
       {toastVisible && (
         <div className="toast-banner" role="status" aria-live="polite">
           This collection is coming soon in Phase 2

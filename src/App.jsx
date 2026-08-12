@@ -1,10 +1,12 @@
 import { useCallback, useState } from 'react'
+import LandingPage from './components/LandingPage'
 import CategorySelector from './components/CategorySelector'
 import UploadZone from './components/UploadZone'
 import VisualizerStudio from './components/VisualizerStudio'
 import CartDrawer from './components/CartDrawer'
 
 export const STEPS = {
+  HOME: 'HOME',
   CATEGORIES: 'CATEGORIES',
   UPLOAD: 'UPLOAD',
   VISUALIZER: 'VISUALIZER',
@@ -14,6 +16,8 @@ const STEP_ORDER = [STEPS.CATEGORIES, STEPS.UPLOAD, STEPS.VISUALIZER]
 
 function StepProgress({ currentStep }) {
   const currentIndex = STEP_ORDER.indexOf(currentStep)
+
+  if (currentIndex === -1) return null
 
   return (
     <nav className="step-progress" aria-label="Progress">
@@ -46,11 +50,12 @@ function StepProgress({ currentStep }) {
 }
 
 function App() {
-  const [currentStep, setCurrentStep] = useState(STEPS.CATEGORIES)
+  const [currentStep, setCurrentStep] = useState(STEPS.HOME)
   const [cartItems, setCartItems] = useState([])
   const [isCartOpen, setIsCartOpen] = useState(false)
 
   const cartCount = cartItems.length
+  const isHome = currentStep === STEPS.HOME
 
   const handleAddToCart = useCallback((texture) => {
     setCartItems((prev) => [
@@ -66,10 +71,16 @@ function App() {
 
   const renderStep = () => {
     switch (currentStep) {
+      case STEPS.HOME:
+        return (
+          <LandingPage
+            onLaunchVisualizer={() => setCurrentStep(STEPS.CATEGORIES)}
+          />
+        )
       case STEPS.CATEGORIES:
         return (
           <div className="step-view">
-            <div className="step-container">
+            <div className="step-container step-container--wide">
               <div className="step-header">
                 <span className="step-label">Step 1 of 3</span>
                 <h1>Select Your Collection</h1>
@@ -87,7 +98,7 @@ function App() {
       case STEPS.UPLOAD:
         return (
           <div className="step-view">
-            <div className="step-container">
+            <div className="step-container step-container--wide">
               <div className="step-header">
                 <span className="step-label">Step 2 of 3</span>
                 <h1>Upload Your Space</h1>
@@ -123,56 +134,58 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <button
-          type="button"
-          className="brand"
-          onClick={() => setCurrentStep(STEPS.CATEGORIES)}
-          aria-label="Grazia Stones home"
-        >
-          <span className="brand-name">Grazia Stones</span>
-          <span className="brand-tagline">
-            Fine Statement Walls &amp; Spatial Visualizer
-          </span>
-        </button>
-
-        <div className="header-actions">
-          <span className="beta-badge">
-            <span className="beta-badge-dot" aria-hidden="true" />
-            Spatial AR Visualizer (Beta)
-          </span>
-
+    <div className={`app${isHome ? ' app--home' : ''}`}>
+      {!isHome && (
+        <header className="app-header">
           <button
             type="button"
-            className="cart-button"
-            aria-label={`Shopping cart${cartCount > 0 ? `, ${cartCount} items` : ''}`}
-            onClick={() => setIsCartOpen(true)}
+            className="brand"
+            onClick={() => setCurrentStep(STEPS.HOME)}
+            aria-label="Grazia Stones home"
           >
-            <svg
-              className="cart-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              aria-hidden="true"
-            >
-              <path d="M6 6h15l-1.5 9H7.5L6 6z" />
-              <path d="M6 6L5 3H2" />
-              <circle cx="9" cy="20" r="1" />
-              <circle cx="18" cy="20" r="1" />
-            </svg>
-            {cartCount > 0 && (
-              <span className="cart-count" aria-hidden="true">
-                {cartCount}
-              </span>
-            )}
+            <span className="brand-name">Grazia Stones</span>
+            <span className="brand-tagline">
+              Fine Statement Walls &amp; Spatial Visualizer
+            </span>
           </button>
-        </div>
-      </header>
 
-      <main className="app-main">
-        <StepProgress currentStep={currentStep} />
+          <div className="header-actions">
+            <span className="beta-badge">
+              <span className="beta-badge-dot" aria-hidden="true" />
+              Spatial AR Visualizer (Beta)
+            </span>
+
+            <button
+              type="button"
+              className="cart-button"
+              aria-label={`Shopping cart${cartCount > 0 ? `, ${cartCount} items` : ''}`}
+              onClick={() => setIsCartOpen(true)}
+            >
+              <svg
+                className="cart-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                aria-hidden="true"
+              >
+                <path d="M6 6h15l-1.5 9H7.5L6 6z" />
+                <path d="M6 6L5 3H2" />
+                <circle cx="9" cy="20" r="1" />
+                <circle cx="18" cy="20" r="1" />
+              </svg>
+              {cartCount > 0 && (
+                <span className="cart-count" aria-hidden="true">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </header>
+      )}
+
+      <main className={`app-main${isHome ? ' app-main--home' : ''}`}>
+        {!isHome && <StepProgress currentStep={currentStep} />}
         {renderStep()}
       </main>
 
