@@ -1,24 +1,18 @@
-import { useEffect, useState } from 'react'
-import { TEXTURES } from '../data/textures'
+import { useMemo, useState } from 'react'
+import { TEXTURE_OPTIONS } from '../data/textures'
 
 function VisualizerStudio({ onAddToCart }) {
-  const [selectedTexture, setSelectedTexture] = useState(TEXTURES[0])
-  const [textureOpacity, setTextureOpacity] = useState(1)
+  const [selectedTexture, setSelectedTexture] = useState(TEXTURE_OPTIONS[0].image)
 
-  useEffect(() => {
-    setTextureOpacity(0)
-    const timer = setTimeout(() => setTextureOpacity(1), 400)
-    return () => clearTimeout(timer)
-  }, [selectedTexture.id])
+  const activeOption = useMemo(
+    () =>
+      TEXTURE_OPTIONS.find((item) => item.image === selectedTexture) ??
+      TEXTURE_OPTIONS[0],
+    [selectedTexture],
+  )
 
   const handleAddToCart = () => {
-    onAddToCart(selectedTexture)
-  }
-
-  const handleSelectTexture = (texture) => {
-    if (texture.id !== selectedTexture.id) {
-      setSelectedTexture(texture)
-    }
+    onAddToCart(activeOption)
   }
 
   return (
@@ -34,26 +28,26 @@ function VisualizerStudio({ onAddToCart }) {
         <div className="texture-carousel">
           <span className="texture-carousel-label">Texture Selector</span>
           <div className="texture-grid">
-            {TEXTURES.map((texture) => (
+            {TEXTURE_OPTIONS.map((item) => (
               <button
-                key={texture.id}
+                key={item.image}
                 type="button"
                 className={[
                   'texture-option',
-                  selectedTexture.id === texture.id && 'texture-option--selected',
+                  selectedTexture === item.image && 'texture-option--selected',
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => handleSelectTexture(texture)}
-                aria-pressed={selectedTexture.id === texture.id}
-                aria-label={texture.name}
+                onClick={() => setSelectedTexture(item.image)}
+                aria-pressed={selectedTexture === item.image}
+                aria-label={item.name}
               >
                 <img
-                  src={texture.image}
+                  src={item.image}
                   alt=""
                   className="texture-option-image"
                 />
-                <span className="texture-option-name">{texture.name}</span>
+                <span className="texture-option-name">{item.name}</span>
               </button>
             ))}
           </div>
@@ -62,15 +56,15 @@ function VisualizerStudio({ onAddToCart }) {
         <dl className="material-specs">
           <div className="material-spec">
             <dt>Finish</dt>
-            <dd>{selectedTexture.finish}</dd>
+            <dd>{activeOption.finish}</dd>
           </div>
           <div className="material-spec">
             <dt>Origin</dt>
-            <dd>{selectedTexture.origin}</dd>
+            <dd>{activeOption.origin}</dd>
           </div>
           <div className="material-spec">
             <dt>Slabs Available</dt>
-            <dd>{selectedTexture.slabsAvailable} in stock</dd>
+            <dd>{activeOption.slabsAvailable} in stock</dd>
           </div>
         </dl>
 
@@ -86,10 +80,9 @@ function VisualizerStudio({ onAddToCart }) {
       <div className="visualizer-preview">
         <div className="preview-canvas">
           <img
-            src={selectedTexture.image}
-            alt={`${selectedTexture.name} applied to room surfaces`}
+            src={selectedTexture}
+            alt={`${activeOption.name} applied to room surfaces`}
             className="preview-texture-layer"
-            style={{ opacity: textureOpacity }}
           />
           <img
             src="/bathroom-mask.png"

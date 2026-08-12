@@ -1,7 +1,7 @@
-export const TEXTURES = [
+export const TEXTURE_OPTIONS = [
   {
     id: 'calacatta-gold',
-    name: 'Calacatta Gold Marble',
+    name: 'Calacatta Gold',
     image: '/marble-1.jpg',
     finish: 'Polished',
     origin: 'Carrara, Italy',
@@ -19,7 +19,7 @@ export const TEXTURES = [
   },
   {
     id: 'jaisalmer-yellow',
-    name: 'Jaisalmer Yellow Sandstone',
+    name: 'Jaisalmer Yellow',
     image: '/marble-3.jpg',
     finish: 'Honed',
     origin: 'Jaisalmer, India',
