@@ -17,6 +17,28 @@ function VisualizerStudio({ onAddToCart }) {
 
   return (
     <div className="visualizer-studio visualizer-studio--wide">
+      <div className="visualizer-preview">
+        <div className="preview-frame">
+          <div className="preview-canvas">
+            <img
+              src={selectedTexture}
+              alt={`${activeOption.name} applied to room surfaces`}
+              className="preview-texture-layer"
+            />
+            <img
+              src="/bathroom-mask.png"
+              alt=""
+              className="preview-mask-layer"
+              aria-hidden="true"
+            />
+            <div className="preview-mode-pill">
+              <span className="preview-mode-dot" aria-hidden="true" />
+              Live AR Simulation · Active
+            </div>
+          </div>
+        </div>
+      </div>
+
       <aside className="visualizer-sidebar">
         <div className="visualizer-sidebar-header">
           <span className="step-label">Step 3 of 3</span>
@@ -51,6 +73,9 @@ function VisualizerStudio({ onAddToCart }) {
               </button>
             ))}
           </div>
+          <p className="texture-active-label" aria-live="polite">
+            {activeOption.name}
+          </p>
         </div>
 
         <dl className="material-specs">
@@ -76,28 +101,6 @@ function VisualizerStudio({ onAddToCart }) {
           Add Selected Material to Cart
         </button>
       </aside>
-
-      <div className="visualizer-preview">
-        <div className="preview-frame">
-          <div className="preview-canvas">
-            <img
-              src={selectedTexture}
-              alt={`${activeOption.name} applied to room surfaces`}
-              className="preview-texture-layer"
-            />
-            <img
-              src="/bathroom-mask.png"
-              alt=""
-              className="preview-mask-layer"
-              aria-hidden="true"
-            />
-            <div className="preview-mode-pill">
-              <span className="preview-mode-dot" aria-hidden="true" />
-              Live AR Simulation · Active
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

@@ -586,6 +586,7 @@ a:hover {
 
 .visualizer-studio {
   display: flex;
+  flex-direction: row;
   gap: 2rem;
   width: min(94vw, var(--layout-max));
   max-width: var(--layout-max);
@@ -593,6 +594,7 @@ a:hover {
 }
 
 .visualizer-sidebar {
+  order: 1;
   flex: 0 0 30%;
   min-width: 300px;
   max-width: 380px;
@@ -686,6 +688,15 @@ a:hover {
   font-weight: 600;
 }
 
+.texture-active-label {
+  display: none;
+  margin-top: 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
 .material-specs {
   display: flex;
   flex-direction: column;
@@ -725,6 +736,7 @@ a:hover {
 }
 
 .visualizer-preview {
+  order: 2;
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -1342,6 +1354,166 @@ a:hover {
   transform: translateY(0);
 }
 
+/* ── Visualizer Studio — Mobile ── */
+
+@media (max-width: 768px) {
+  .step-view--studio {
+    padding: 0 0 5.5rem;
+    animation: none;
+  }
+
+  .step-view h1 {
+    font-size: clamp(1.75rem, 5vw, 2.25rem);
+  }
+
+  .step-view h2 {
+    font-size: clamp(1.25rem, 4vw, 1.625rem);
+  }
+
+  .visualizer-studio {
+    flex-direction: column;
+    width: 100%;
+    max-width: none;
+    gap: 0;
+  }
+
+  .visualizer-preview {
+    order: 1;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    flex: none;
+    width: 100%;
+    padding: 0;
+    background: var(--bg);
+    box-shadow: 0 8px 24px rgba(28, 26, 23, 0.1);
+  }
+
+  .preview-frame {
+    padding: 0.375rem 0.5rem 0.625rem;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .preview-canvas {
+    border-radius: 6px;
+    aspect-ratio: 16 / 9;
+  }
+
+  .preview-mode-pill {
+    top: 0.625rem;
+    right: 0.625rem;
+    font-size: 0.5625rem;
+    padding: 0.3125rem 0.625rem;
+  }
+
+  .visualizer-sidebar {
+    order: 2;
+    min-width: 0;
+    max-width: none;
+    gap: 1.25rem;
+    padding: 1rem 0.875rem calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .visualizer-sidebar-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .step-label {
+    font-size: 0.625rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .texture-carousel-label {
+    font-size: 0.625rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .texture-grid {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 0.25rem;
+  }
+
+  .texture-grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .texture-option {
+    flex: 0 0 auto;
+    width: 80px;
+    scroll-snap-align: start;
+    border-radius: 6px;
+    box-shadow: none;
+  }
+
+  .texture-option:hover {
+    transform: none;
+  }
+
+  .texture-option--selected {
+    box-shadow: 0 0 0 2px #c5a059;
+  }
+
+  .texture-option-image {
+    width: 80px;
+    height: 80px;
+    flex-shrink: 0;
+    aspect-ratio: unset;
+  }
+
+  .texture-option-name {
+    display: none;
+  }
+
+  .texture-active-label {
+    display: block;
+  }
+
+  .material-specs {
+    padding: 0.875rem 0;
+    gap: 0.625rem;
+  }
+
+  .material-spec dt {
+    font-size: 0.625rem;
+  }
+
+  .material-spec dd {
+    font-size: 0.8125rem;
+  }
+
+  .visualizer-add-btn {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 60;
+    margin: 0;
+    padding: 0.875rem 0.875rem calc(0.875rem + env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: 0 -6px 24px rgba(28, 26, 23, 0.1);
+  }
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 640px) {
@@ -1380,28 +1552,6 @@ a:hover {
     white-space: normal;
     text-align: center;
     max-width: calc(100vw - 2.5rem);
-  }
-
-  .visualizer-studio {
-    flex-direction: column;
-  }
-
-  .visualizer-sidebar,
-  .visualizer-preview {
-    flex: 1 1 auto;
-  }
-
-  .texture-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .step-view--studio {
-    padding: 1rem 1.25rem 2rem;
-  }
-
-  .visualizer-sidebar {
-    min-width: 0;
-    max-width: none;
   }
 
   .excellence-item--image-left,
