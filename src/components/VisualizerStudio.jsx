@@ -78,21 +78,23 @@ function VisualizerStudio({ onAddToCart }) {
       </aside>
 
       <div className="visualizer-preview">
-        <div className="preview-canvas">
-          <img
-            src={selectedTexture}
-            alt={`${activeOption.name} applied to room surfaces`}
-            className="preview-texture-layer"
-          />
-          <img
-            src="/bathroom-mask.png"
-            alt=""
-            className="preview-mask-layer"
-            aria-hidden="true"
-          />
-          <div className="preview-mode-pill">
-            <span className="preview-mode-dot" aria-hidden="true" />
-            Live AR Simulation Mode [Active]
+        <div className="preview-frame">
+          <div className="preview-canvas">
+            <img
+              src={selectedTexture}
+              alt={`${activeOption.name} applied to room surfaces`}
+              className="preview-texture-layer"
+            />
+            <img
+              src="/bathroom-mask.png"
+              alt=""
+              className="preview-mask-layer"
+              aria-hidden="true"
+            />
+            <div className="preview-mode-pill">
+              <span className="preview-mode-dot" aria-hidden="true" />
+              Live AR Simulation · Active
+            </div>
           </div>
         </div>
       </div>

@@ -132,7 +132,9 @@ function App() {
           aria-label="Grazia Stones home"
         >
           <span className="brand-name">Grazia Stones</span>
-          <span className="brand-tagline">Visualizer Experience</span>
+          <span className="brand-tagline">
+            Fine Statement Walls &amp; Spatial Visualizer
+          </span>
         </button>
 
         <div className="header-actions">
