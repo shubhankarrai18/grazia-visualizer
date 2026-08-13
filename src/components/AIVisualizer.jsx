@@ -7,10 +7,7 @@ env.allowLocalModels = false
 const MARBLE_TEXTURES = TEXTURE_OPTIONS.map((t) => t.image)
 const SAMPLE_LUXURY_ROOM =
   'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?q=80&w=1600&auto=format&fit=crop'
-const MAX_RENDER_DIMENSION = 1280
-const ALPHA_THRESHOLD = 160
 
-const INCLUSION_KEYWORDS = ['wall', 'tile']
 const EXCLUSION_KEYWORDS = [
   'toilet',
   'cabinet',
@@ -23,137 +20,239 @@ const EXCLUSION_KEYWORDS = [
   'window',
   'towel',
   'faucet',
-  'floor',
-  'ceiling',
 ]
 
 function labelMatches(label, keywords) {
+  if (!label) return false
   const lower = label.toLowerCase()
   return keywords.some((keyword) => lower.includes(keyword))
 }
 
+function isWallOrTileSegment(item) {
+  if (!item?.label) return false
+  const label = item.label.toLowerCase()
+  return label.includes('wall') || label.includes('tile') || label.includes('partition')
+}
+
+// Return the library-produced canvas for the mask without manual pixel fiddling.
 function maskToCanvas(rawMask) {
-  if (typeof rawMask.toCanvas === 'function') {
-    return rawMask.toCanvas()
-  }
-
-  const canvas = document.createElement('canvas')
-  canvas.width = rawMask.width
-  canvas.height = rawMask.height
-  const ctx = canvas.getContext('2d')
-  const imageData = ctx.createImageData(rawMask.width, rawMask.height)
-
-  for (let i = 0; i < rawMask.data.length; i++) {
-    const value = rawMask.data[i]
-    imageData.data[i * 4] = value
-    imageData.data[i * 4 + 1] = value
-    imageData.data[i * 4 + 2] = value
-    imageData.data[i * 4 + 3] = 255
-  }
-
-  ctx.putImageData(imageData, 0, 0)
-  return canvas
+  if (!rawMask) return null
+  return rawMask.toCanvas()
 }
 
-function getRenderDimensions(width, height) {
-  const longest = Math.max(width, height)
-  if (longest <= MAX_RENDER_DIMENSION) {
-    return { width, height }
-  }
-
-  const scale = MAX_RENDER_DIMENSION / longest
-  return {
-    width: Math.round(width * scale),
-    height: Math.round(height * scale),
-  }
-}
-
-function applyAlphaThreshold(canvas, threshold = ALPHA_THRESHOLD) {
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return canvas
-
-  const { width, height } = canvas
-  const imageData = ctx.getImageData(0, 0, width, height)
-
-  for (let i = 0; i < imageData.data.length; i += 4) {
-    const luminance = Math.max(
-      imageData.data[i],
-      imageData.data[i + 1],
-      imageData.data[i + 2],
-    )
-    const alpha = imageData.data[i + 3]
-
-    if (luminance > threshold || alpha > threshold) {
-      imageData.data[i] = 255
-      imageData.data[i + 1] = 255
-      imageData.data[i + 2] = 255
-      imageData.data[i + 3] = 255
-    } else {
-      imageData.data[i] = 0
-      imageData.data[i + 1] = 0
-      imageData.data[i + 2] = 0
-      imageData.data[i + 3] = 0
-    }
-  }
-
-  ctx.putImageData(imageData, 0, 0)
-  return canvas
-}
-
+// Draw a scaled, clean alpha mask using canvas compositing rather than pixel loops.
+// - Draw the grayscale mask onto a temporary canvas scaled to `width`/`height`.
+// - Fill that temp canvas with white, set `destination-in`, then draw the grayscale
+//   mask so white is kept only where the mask is non‑zero (black becomes transparent).
+// - Use that temp canvas for `include` (draw normally) and `exclude` (destination-out).
 function drawMaskLayer(ctx, rawMask, width, height, mode) {
-  if (!rawMask) return
+  if (!rawMask || !ctx) return
 
-  const maskCanvas = maskToCanvas(rawMask)
-  const layer = document.createElement('canvas')
-  layer.width = width
-  layer.height = height
-  const layerCtx = layer.getContext('2d')
-  if (!layerCtx) return
+  const src = rawMask.toCanvas()
+  if (!src) return
 
-  if (mode === 'include') {
-    layerCtx.fillStyle = 'rgba(255, 255, 255, 1)'
-    layerCtx.fillRect(0, 0, width, height)
-    layerCtx.globalCompositeOperation = 'destination-in'
-    layerCtx.drawImage(maskCanvas, 0, 0, width, height)
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.drawImage(layer, 0, 0)
-    return
+  const temp = document.createElement('canvas')
+  temp.width = width
+  temp.height = height
+  const tctx = temp.getContext('2d')
+  if (!tctx) return
+
+  // Step 1: make a solid white base (this will become the visible mask shape)
+  tctx.fillStyle = 'white'
+  tctx.fillRect(0, 0, width, height)
+
+  // Step 2: use destination-in to keep only the areas where the grayscale mask has coverage
+  tctx.globalCompositeOperation = 'destination-in'
+  tctx.drawImage(src, 0, 0, width, height)
+
+  // Reset composite mode on temp context
+  tctx.globalCompositeOperation = 'source-over'
+
+  // Diagnostic sampling to verify alpha channel after compositing
+  try {
+    const cx = Math.floor(width / 2)
+    const cy = Math.floor(height / 2)
+    const s = tctx.getImageData(cx, cy, 1, 1).data[3]
+    const ss = src.getContext && src.getContext('2d')
+      ? src.getContext('2d').getImageData(Math.floor(src.width/2), Math.floor(src.height/2), 1, 1).data[3]
+      : null
+    console.log('drawMaskLayer: src size', src.width, src.height, 'temp size', width, height, 'src center alpha', ss, 'temp center alpha', s)
+  } catch (e) {
+    console.warn('drawMaskLayer diagnostic failed:', e)
   }
 
-  ctx.globalCompositeOperation = 'destination-out'
-  ctx.drawImage(maskCanvas, 0, 0, width, height)
+  // Apply the cleaned, scaled mask to the destination context
+  const prev = ctx.globalCompositeOperation
+  if (mode === 'include') {
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.drawImage(temp, 0, 0, width, height)
+  } else if (mode === 'exclude') {
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.drawImage(temp, 0, 0, width, height)
+  }
+  // restore
+  ctx.globalCompositeOperation = prev
+}
+
+function createFallbackWallMask(width, height) {
+  const maskCanvas = document.createElement('canvas')
+  maskCanvas.width = width
+  maskCanvas.height = height
+  const ctx = maskCanvas.getContext('2d')
+  if (!ctx) return maskCanvas
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 1)'
+  const marginX = width * 0.08
+  const top = height * 0.06
+  const wallWidth = width - marginX * 2
+  const wallHeight = height * 0.62
+  ctx.fillRect(marginX, top, wallWidth, wallHeight)
+
+  return maskCanvas
 }
 
 function buildBinaryWallMask(segmentationOutput, width, height) {
-  const inclusionItems = segmentationOutput.filter((item) =>
-    labelMatches(item.label, INCLUSION_KEYWORDS),
+  const wallSegments = segmentationOutput.filter((item) =>
+    isWallOrTileSegment(item),
   )
   const exclusionItems = segmentationOutput.filter((item) =>
     labelMatches(item.label, EXCLUSION_KEYWORDS),
   )
 
-  if (inclusionItems.length === 0) {
-    return null
-  }
-
-  const wallCanvas = document.createElement('canvas')
-  wallCanvas.width = width
-  wallCanvas.height = height
-  const ctx = wallCanvas.getContext('2d')
-  if (!ctx) return null
+  const maskCanvas = document.createElement('canvas')
+  maskCanvas.width = width
+  maskCanvas.height = height
+  // we will read back pixels frequently for diagnostics and overlap checks
+  const ctx = maskCanvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return createFallbackWallMask(width, height)
 
   ctx.clearRect(0, 0, width, height)
 
-  for (const item of inclusionItems) {
-    drawMaskLayer(ctx, item.mask, width, height, 'include')
+  // helper: count non-zero alpha pixels in a canvas context
+  function countAlphaPixels(context, w, h) {
+    try {
+      const data = context.getImageData(0, 0, w, h).data
+      let cnt = 0
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] > 128) cnt++
+      }
+      return cnt
+    } catch (e) {
+      console.warn('countAlphaPixels failed', e)
+      return 0
+    }
   }
 
+  let includedCount = 0
+
+  if (wallSegments.length === 0) {
+    console.warn('No exact wall/tile segments detected — using fallback wall mask.')
+    if (segmentationOutput.length > 0) {
+      console.log('buildBinaryWallMask: using first segmentation item as include:', segmentationOutput[0].label)
+      drawMaskLayer(ctx, segmentationOutput[0].mask, width, height, 'include')
+      try {
+        const c = ctx.getImageData(Math.floor(width/2), Math.floor(height/2), 1, 1).data[3]
+        console.log('buildBinaryWallMask: mask alpha after include (center):', c)
+      } catch (e) {
+        console.warn('buildBinaryWallMask: sample after include failed', e)
+      }
+    } else {
+      return createFallbackWallMask(width, height)
+    }
+  } else {
+    console.log('buildBinaryWallMask: wallSegments labels:', wallSegments.map(w=>w.label))
+    for (const item of wallSegments) {
+      drawMaskLayer(ctx, item.mask, width, height, 'include')
+      try {
+        const c = ctx.getImageData(Math.floor(width/2), Math.floor(height/2), 1, 1).data[3]
+        console.log('buildBinaryWallMask: mask alpha after include', item.label, c)
+      } catch (e) {
+        console.warn('buildBinaryWallMask: sample after include failed', e)
+      }
+    }
+
+  // count included pixels after composing all wall includes
+  includedCount = countAlphaPixels(ctx, width, height)
+  console.log('buildBinaryWallMask: included pixel count', includedCount)
+  }
+
+  if (!includedCount || includedCount === 0) {
+    console.warn('buildBinaryWallMask: includedCount is not defined or zero — using geometric fallback mask')
+    return createFallbackWallMask(width, height)
+  }
+
+  // For each exclusion, estimate how many included pixels it would remove.
+  // If an exclusion removes more than `EXCLUSION_REMOVE_THRESHOLD` fraction
+  // of the included mask, skip it as likely to be overbroad.
+  const EXCLUSION_REMOVE_THRESHOLD = 0.25
+
   for (const item of exclusionItems) {
-    drawMaskLayer(ctx, item.mask, width, height, 'exclude')
+    console.log('buildBinaryWallMask: considering exclusion label:', item.label)
+
+    // Build the exclusion mask into a temp canvas (same technique as drawMaskLayer)
+    const exclusionSrc = item.mask.toCanvas()
+    const exclTemp = document.createElement('canvas')
+    exclTemp.width = width
+    exclTemp.height = height
+    const exclCtx = exclTemp.getContext('2d')
+    if (!exclCtx) continue
+    exclCtx.fillStyle = 'white'
+    exclCtx.fillRect(0, 0, width, height)
+    exclCtx.globalCompositeOperation = 'destination-in'
+    exclCtx.drawImage(exclusionSrc, 0, 0, width, height)
+    exclCtx.globalCompositeOperation = 'source-over'
+
+    // Create a test canvas copying current mask, then simulate destination-out
+    const testCanvas = document.createElement('canvas')
+    testCanvas.width = width
+    testCanvas.height = height
+    const testCtx = testCanvas.getContext('2d')
+    if (!testCtx) continue
+    testCtx.drawImage(maskCanvas, 0, 0)
+    testCtx.globalCompositeOperation = 'destination-out'
+    testCtx.drawImage(exclTemp, 0, 0)
+
+    const remaining = countAlphaPixels(testCtx, width, height)
+    const removed = Math.max(0, includedCount - remaining)
+    const removedFraction = includedCount > 0 ? removed / includedCount : 0
+    console.log('buildBinaryWallMask: exclusion', item.label, 'removedFraction', removedFraction)
+
+    if (removedFraction > EXCLUSION_REMOVE_THRESHOLD) {
+      console.log('buildBinaryWallMask: skipping exclusion (overbroad):', item.label)
+      continue
+    }
+
+    // Apply the exclusion to the real mask
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.drawImage(exclTemp, 0, 0)
+    ctx.globalCompositeOperation = 'source-over'
+
+    try {
+      const c = ctx.getImageData(Math.floor(width/2), Math.floor(height/2), 1, 1).data[3]
+      console.log('buildBinaryWallMask: mask alpha after exclude', item.label, c)
+    } catch (e) {
+      console.warn('buildBinaryWallMask: sample after exclude failed', e)
+    }
   }
 
   ctx.globalCompositeOperation = 'source-over'
-  return applyAlphaThreshold(wallCanvas)
+
+  // Expose final mask for debugging in the page context
+  try {
+    // attach to window so you can inspect or draw it in the console
+    if (typeof window !== 'undefined') window.__DEBUG_MASK_CANVAS__ = maskCanvas
+  } catch (e) {
+    /* ignore */
+  }
+
+  try {
+    const c = ctx.getImageData(Math.floor(width/2), Math.floor(height/2), 1, 1).data[3]
+    console.log('buildBinaryWallMask: final mask alpha (center):', c)
+  } catch (e) {
+    console.warn('buildBinaryWallMask: final sample failed', e)
+  }
+
+  return maskCanvas 
 }
 
 function revokeBlobUrl(url) {
@@ -165,17 +264,19 @@ function revokeBlobUrl(url) {
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image()
-    img.crossOrigin = 'anonymous'
+    if (!src.startsWith('blob:') && !src.startsWith('data:')) {
+      img.crossOrigin = 'anonymous'
+    }
     img.onload = () => resolve(img)
-    img.onerror = reject
+    img.onerror = (err) => reject(err)
     img.src = src
   })
 }
 
 function AIVisualizer({ onAddToCart }) {
   const [uploadedImage, setUploadedImage] = useState(null)
-  const [processedMask, setProcessedMask] = useState(null)
   const [selectedTexture, setSelectedTexture] = useState(MARBLE_TEXTURES[0])
+  const [maskDataUrl, setMaskDataUrl] = useState(null) 
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState(null)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
@@ -196,6 +297,7 @@ function AIVisualizer({ onAddToCart }) {
   const processImageSource = useCallback((imageSrc) => {
     revokeBlobUrl(uploadedImageRef.current)
     uploadedImageRef.current = imageSrc.startsWith('blob:') ? imageSrc : null
+    setMaskDataUrl(null)
     setUploadedImage(imageSrc)
   }, [])
 
@@ -306,10 +408,75 @@ function AIVisualizer({ onAddToCart }) {
     processImageSource(dataUrl)
   }, [processImageSource, stopCamera])
 
-  // Hook 1 — AI processing (runs only when uploadedImage changes)
+  const renderCanvas = useCallback(async () => {
+    const canvas = canvasRef.current
+
+    if (!canvas || !uploadedImage || !maskDataUrl || !selectedTexture) {
+      return
+    }
+
+    try {
+      const [baseImg, textureImg, maskImg] = await Promise.all([
+        loadImage(uploadedImage),
+        loadImage(selectedTexture),
+        loadImage(maskDataUrl)
+      ])
+
+      const width = baseImg.naturalWidth
+      const height = baseImg.naturalHeight
+
+      canvas.width = width
+      canvas.height = height
+
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      // Diagnostic: inspect mask image to ensure it has expected alpha/coverage
+      try {
+        const sampleCanvas = document.createElement('canvas')
+        sampleCanvas.width = maskImg.naturalWidth || width
+        sampleCanvas.height = maskImg.naturalHeight || height
+        const sctx = sampleCanvas.getContext('2d')
+        if (sctx) {
+          sctx.clearRect(0, 0, sampleCanvas.width, sampleCanvas.height)
+          sctx.drawImage(maskImg, 0, 0, sampleCanvas.width, sampleCanvas.height)
+          const imgd = sctx.getImageData(
+            Math.floor(sampleCanvas.width / 2),
+            Math.floor(sampleCanvas.height / 2),
+            1,
+            1,
+          )
+          const alpha = imgd.data[3]
+          console.log('Mask sample alpha (center pixel):', alpha)
+        }
+      } catch (diagErr) {
+        console.warn('Mask diagnostic failed:', diagErr)
+      }
+
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.clearRect(0, 0, width, height)
+
+      // Step 1 — draw binary wall mask
+      ctx.drawImage(maskImg, 0, 0, width, height)
+
+      // Step 2 — marble clipped strictly to wall shape
+      ctx.globalCompositeOperation = 'source-in'
+      ctx.drawImage(textureImg, 0, 0, width, height)
+
+      // Step 3 — relight with original photo shadows and environment
+      ctx.globalCompositeOperation = 'multiply'
+      ctx.drawImage(baseImg, 0, 0, width, height)
+
+      // Step 4 — reset composite mode
+      ctx.globalCompositeOperation = 'source-over'
+    } catch (paintError) {
+      console.error('Canvas compositing failed:', paintError)
+    }
+  }, [uploadedImage, selectedTexture, maskDataUrl])
+
   useEffect(() => {
     if (!uploadedImage) {
-      setProcessedMask(null)
+      setMaskDataUrl(null)
       return undefined
     }
 
@@ -318,11 +485,14 @@ function AIVisualizer({ onAddToCart }) {
     async function runSegmentation() {
       setIsProcessing(true)
       setError(null)
-      setProcessedMask(null)
+      setMaskDataUrl(null)
 
       try {
         const photo = await loadImage(uploadedImage)
         if (cancelled) return
+
+        const width = photo.naturalWidth
+        const height = photo.naturalHeight
 
         if (!segmenterRef.current) {
           segmenterRef.current = await pipeline(
@@ -334,22 +504,16 @@ function AIVisualizer({ onAddToCart }) {
         if (cancelled) return
 
         const output = await segmenterRef.current(uploadedImage)
+        console.log('AI Output Labels Detected:', output.map(o => o.label))
+
         if (cancelled) return
 
-        const { width, height } = getRenderDimensions(photo.width, photo.height)
         const maskCanvas = buildBinaryWallMask(output, width, height)
-
-        if (!maskCanvas) {
-          throw new Error(
-            'Could not detect wall or tile surfaces. Try a clearer bathroom photo.',
-          )
-        }
-
-        setProcessedMask(maskCanvas)
+        setMaskDataUrl(maskCanvas.toDataURL('image/png'))
       } catch (segmentError) {
         console.error(segmentError)
         if (!cancelled) {
-          setProcessedMask(null)
+          setMaskDataUrl(null)
           setError(
             segmentError instanceof Error
               ? segmentError.message
@@ -370,60 +534,11 @@ function AIVisualizer({ onAddToCart }) {
     }
   }, [uploadedImage])
 
-  // Hook 2 — canvas compositing (runs when mask, texture, or photo changes)
   useEffect(() => {
-    if (!processedMask || !uploadedImage) return undefined
-
-    let cancelled = false
-
-    async function compositeCanvas() {
-      const canvas = canvasRef.current
-      if (!canvas) return
-
-      try {
-        const [textureImg, photoImg] = await Promise.all([
-          loadImage(selectedTexture),
-          loadImage(uploadedImage),
-        ])
-
-        if (cancelled) return
-
-        const { width, height } = getRenderDimensions(
-          photoImg.width,
-          photoImg.height,
-        )
-
-        canvas.width = width
-        canvas.height = height
-
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-
-        // Step A — clear and draw binary wall mask
-        ctx.globalCompositeOperation = 'source-over'
-        ctx.clearRect(0, 0, width, height)
-        ctx.drawImage(processedMask, 0, 0, width, height)
-
-        // Step B — marble clipped to wall pixels
-        ctx.globalCompositeOperation = 'source-in'
-        ctx.drawImage(textureImg, 0, 0, width, height)
-
-        // Step C — relight with original bathroom photo
-        ctx.globalCompositeOperation = 'multiply'
-        ctx.drawImage(photoImg, 0, 0, width, height)
-
-        ctx.globalCompositeOperation = 'source-over'
-      } catch (paintError) {
-        console.error(paintError)
-      }
+    if (maskDataUrl) {
+      renderCanvas()
     }
-
-    compositeCanvas()
-
-    return () => {
-      cancelled = true
-    }
-  }, [processedMask, selectedTexture, uploadedImage])
+  }, [renderCanvas, maskDataUrl, selectedTexture])
 
   useEffect(() => {
     if (videoRef.current && cameraStream) {
@@ -538,7 +653,7 @@ function AIVisualizer({ onAddToCart }) {
           type="button"
           className="btn btn-primary visualizer-add-btn"
           onClick={handleAddToCart}
-          disabled={!processedMask}
+          disabled={!maskDataUrl}
         >
           Add Selected Material to Cart
         </button>
@@ -599,6 +714,7 @@ function AIVisualizer({ onAddToCart }) {
           <canvas
             ref={canvasRef}
             className="ai-render-canvas"
+            style={{ width: '100%', height: 'auto', display: 'block' }}
             aria-label="AI marble visualization preview"
           />
         </div>
@@ -617,7 +733,7 @@ function AIVisualizer({ onAddToCart }) {
                   .filter(Boolean)
                   .join(' ')}
                 onClick={() => setSelectedTexture(item.image)}
-                disabled={!processedMask || isProcessing}
+                disabled={!maskDataUrl || isProcessing}
                 aria-pressed={selectedTexture === item.image}
                 aria-label={item.name}
               >
