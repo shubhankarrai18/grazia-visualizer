@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import LandingPage from './components/LandingPage'
 import CategorySelector from './components/CategorySelector'
 import UploadZone from './components/UploadZone'
-import VisualizerStudio from './components/VisualizerStudio'
+import AIVisualizer from './components/AIVisualizer'
 import CartDrawer from './components/CartDrawer'
 
 export const STEPS = {
@@ -125,7 +125,7 @@ function App() {
       case STEPS.VISUALIZER:
         return (
           <div className="step-view step-view--studio">
-            <VisualizerStudio onAddToCart={handleAddToCart} />
+            <AIVisualizer onAddToCart={handleAddToCart} />
           </div>
         )
       default:
