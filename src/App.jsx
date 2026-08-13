@@ -1,18 +1,16 @@
 import { useCallback, useState } from 'react'
 import LandingPage from './components/LandingPage'
 import CategorySelector from './components/CategorySelector'
-import UploadZone from './components/UploadZone'
 import AIVisualizer from './components/AIVisualizer'
 import CartDrawer from './components/CartDrawer'
 
 export const STEPS = {
   HOME: 'HOME',
   CATEGORIES: 'CATEGORIES',
-  UPLOAD: 'UPLOAD',
   VISUALIZER: 'VISUALIZER',
 }
 
-const STEP_ORDER = [STEPS.CATEGORIES, STEPS.UPLOAD, STEPS.VISUALIZER]
+const STEP_ORDER = [STEPS.CATEGORIES, STEPS.VISUALIZER]
 
 function StepProgress({ currentStep }) {
   const currentIndex = STEP_ORDER.indexOf(currentStep)
@@ -82,7 +80,7 @@ function App() {
           <div className="step-view">
             <div className="step-container step-container--wide">
               <div className="step-header">
-                <span className="step-label">Step 1 of 3</span>
+                <span className="step-label">Step 1 of 2</span>
                 <h1>Select Your Collection</h1>
                 <p className="step-description">
                   Choose a product category to begin your bespoke stone
@@ -90,35 +88,8 @@ function App() {
                 </p>
               </div>
               <CategorySelector
-                onSelectMarble={() => setCurrentStep(STEPS.UPLOAD)}
+                onSelectMarble={() => setCurrentStep(STEPS.VISUALIZER)}
               />
-            </div>
-          </div>
-        )
-      case STEPS.UPLOAD:
-        return (
-          <div className="step-view">
-            <div className="step-container step-container--wide">
-              <div className="step-header">
-                <span className="step-label">Step 2 of 3</span>
-                <h1>Upload Your Space</h1>
-                <p className="step-description">
-                  Share a photo of your room or explore our curated sample
-                  environment for an instant preview.
-                </p>
-              </div>
-              <UploadZone
-                onComplete={() => setCurrentStep(STEPS.VISUALIZER)}
-              />
-              <div className="step-actions">
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => setCurrentStep(STEPS.CATEGORIES)}
-                >
-                  Back
-                </button>
-              </div>
             </div>
           </div>
         )

@@ -5,22 +5,31 @@ import { TEXTURE_OPTIONS } from '../data/textures'
 env.allowLocalModels = false
 
 const MARBLE_TEXTURES = TEXTURE_OPTIONS.map((t) => t.image)
+const SAMPLE_LUXURY_ROOM =
+  'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?q=80&w=1600&auto=format&fit=crop'
 const MAX_RENDER_DIMENSION = 1280
+const ALPHA_THRESHOLD = 160
 
-function resizeMaskToImage(maskCanvas, targetWidth, targetHeight) {
-  if (
-    maskCanvas.width === targetWidth &&
-    maskCanvas.height === targetHeight
-  ) {
-    return maskCanvas
-  }
+const INCLUSION_KEYWORDS = ['wall', 'tile']
+const EXCLUSION_KEYWORDS = [
+  'toilet',
+  'cabinet',
+  'sink',
+  'mirror',
+  'countertop',
+  'bathtub',
+  'shower',
+  'door',
+  'window',
+  'towel',
+  'faucet',
+  'floor',
+  'ceiling',
+]
 
-  const resized = document.createElement('canvas')
-  resized.width = targetWidth
-  resized.height = targetHeight
-  const ctx = resized.getContext('2d')
-  ctx.drawImage(maskCanvas, 0, 0, targetWidth, targetHeight)
-  return resized
+function labelMatches(label, keywords) {
+  const lower = label.toLowerCase()
+  return keywords.some((keyword) => lower.includes(keyword))
 }
 
 function maskToCanvas(rawMask) {
@@ -59,99 +68,185 @@ function getRenderDimensions(width, height) {
   }
 }
 
+function applyAlphaThreshold(canvas, threshold = ALPHA_THRESHOLD) {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return canvas
+
+  const { width, height } = canvas
+  const imageData = ctx.getImageData(0, 0, width, height)
+
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    const luminance = Math.max(
+      imageData.data[i],
+      imageData.data[i + 1],
+      imageData.data[i + 2],
+    )
+    const alpha = imageData.data[i + 3]
+
+    if (luminance > threshold || alpha > threshold) {
+      imageData.data[i] = 255
+      imageData.data[i + 1] = 255
+      imageData.data[i + 2] = 255
+      imageData.data[i + 3] = 255
+    } else {
+      imageData.data[i] = 0
+      imageData.data[i + 1] = 0
+      imageData.data[i + 2] = 0
+      imageData.data[i + 3] = 0
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0)
+  return canvas
+}
+
+function drawMaskLayer(ctx, rawMask, width, height, mode) {
+  if (!rawMask) return
+
+  const maskCanvas = maskToCanvas(rawMask)
+  const layer = document.createElement('canvas')
+  layer.width = width
+  layer.height = height
+  const layerCtx = layer.getContext('2d')
+  if (!layerCtx) return
+
+  if (mode === 'include') {
+    layerCtx.fillStyle = 'rgba(255, 255, 255, 1)'
+    layerCtx.fillRect(0, 0, width, height)
+    layerCtx.globalCompositeOperation = 'destination-in'
+    layerCtx.drawImage(maskCanvas, 0, 0, width, height)
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.drawImage(layer, 0, 0)
+    return
+  }
+
+  ctx.globalCompositeOperation = 'destination-out'
+  ctx.drawImage(maskCanvas, 0, 0, width, height)
+}
+
+function buildBinaryWallMask(segmentationOutput, width, height) {
+  const inclusionItems = segmentationOutput.filter((item) =>
+    labelMatches(item.label, INCLUSION_KEYWORDS),
+  )
+  const exclusionItems = segmentationOutput.filter((item) =>
+    labelMatches(item.label, EXCLUSION_KEYWORDS),
+  )
+
+  if (inclusionItems.length === 0) {
+    return null
+  }
+
+  const wallCanvas = document.createElement('canvas')
+  wallCanvas.width = width
+  wallCanvas.height = height
+  const ctx = wallCanvas.getContext('2d')
+  if (!ctx) return null
+
+  ctx.clearRect(0, 0, width, height)
+
+  for (const item of inclusionItems) {
+    drawMaskLayer(ctx, item.mask, width, height, 'include')
+  }
+
+  for (const item of exclusionItems) {
+    drawMaskLayer(ctx, item.mask, width, height, 'exclude')
+  }
+
+  ctx.globalCompositeOperation = 'source-over'
+  return applyAlphaThreshold(wallCanvas)
+}
+
 function revokeBlobUrl(url) {
   if (url?.startsWith('blob:')) {
     URL.revokeObjectURL(url)
   }
 }
 
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+}
+
 function AIVisualizer({ onAddToCart }) {
   const [uploadedImage, setUploadedImage] = useState(null)
-  const [aiMaskCanvas, setAiMaskCanvas] = useState(null)
+  const [processedMask, setProcessedMask] = useState(null)
   const [selectedTexture, setSelectedTexture] = useState(MARBLE_TEXTURES[0])
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState(null)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
   const [cameraStream, setCameraStream] = useState(null)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
   const videoRef = useRef(null)
-  const photoRef = useRef(null)
   const segmenterRef = useRef(null)
-  const imageCacheRef = useRef(new Map())
   const cameraStreamRef = useRef(null)
+  const uploadedImageRef = useRef(null)
 
   const activeOption =
     TEXTURE_OPTIONS.find((item) => item.image === selectedTexture) ??
     TEXTURE_OPTIONS[0]
 
-  const loadImageElement = useCallback((src) => {
-    if (imageCacheRef.current.has(src)) {
-      return Promise.resolve(imageCacheRef.current.get(src))
-    }
-
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      img.onload = () => {
-        imageCacheRef.current.set(src, img)
-        resolve(img)
-      }
-      img.onerror = reject
-      img.src = src
-    })
+  const processImageSource = useCallback((imageSrc) => {
+    revokeBlobUrl(uploadedImageRef.current)
+    uploadedImageRef.current = imageSrc.startsWith('blob:') ? imageSrc : null
+    setUploadedImage(imageSrc)
   }, [])
 
-  const runSegmentation = useCallback(
-    async (imageSrc) => {
-      setIsProcessing(true)
-      setError(null)
-      setAiMaskCanvas(null)
+  const handleFileSelect = useCallback(
+    (event) => {
+      const file = event.target.files?.[0]
 
-      try {
-        const photo = await loadImageElement(imageSrc)
-        photoRef.current = photo
+      if (file) {
+        processImageSource(URL.createObjectURL(file))
+      }
 
-        if (!segmenterRef.current) {
-          segmenterRef.current = await pipeline(
-            'image-segmentation',
-            'Xenova/segformer-b0-finetuned-ade-512-512',
-          )
-        }
+      event.target.value = null
+    },
+    [processImageSource],
+  )
 
-        const output = await segmenterRef.current(imageSrc)
-        const wallData = output.find((item) =>
-          item.label.toLowerCase().includes('wall'),
-        )
+  const openFilePicker = useCallback(() => {
+    if (isProcessing || isCameraOpen) return
+    fileInputRef.current?.click()
+  }, [isCameraOpen, isProcessing])
 
-        if (!wallData?.mask) {
-          throw new Error(
-            'Could not detect wall surfaces in this photo. Try a clearer bathroom image.',
-          )
-        }
+  const handleDragOver = useCallback(
+    (event) => {
+      if (isProcessing || isCameraOpen) return
+      event.preventDefault()
+      setIsDragOver(true)
+    },
+    [isCameraOpen, isProcessing],
+  )
 
-        const rawMaskCanvas = maskToCanvas(wallData.mask)
-        const { width, height } = getRenderDimensions(photo.width, photo.height)
-        const alignedMask = resizeMaskToImage(rawMaskCanvas, width, height)
-        setAiMaskCanvas(alignedMask)
-      } catch (segmentError) {
-        console.error(segmentError)
-        setError(
-          segmentError instanceof Error
-            ? segmentError.message
-            : 'AI segmentation failed. Please try another photo.',
-        )
-      } finally {
-        setIsProcessing(false)
+  const handleDragLeave = useCallback((event) => {
+    event.preventDefault()
+    setIsDragOver(false)
+  }, [])
+
+  const handleDrop = useCallback(
+    (event) => {
+      if (isProcessing || isCameraOpen) return
+      event.preventDefault()
+      setIsDragOver(false)
+
+      const file = event.dataTransfer.files?.[0]
+      if (file?.type.startsWith('image/')) {
+        processImageSource(URL.createObjectURL(file))
       }
     },
-    [loadImageElement],
+    [isCameraOpen, isProcessing, processImageSource],
   )
 
   const stopCamera = useCallback(() => {
-    const stream = cameraStreamRef.current
-    stream?.getTracks().forEach((track) => track.stop())
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
     cameraStreamRef.current = null
     setCameraStream(null)
     setIsCameraOpen(false)
@@ -188,9 +283,14 @@ function AIVisualizer({ onAddToCart }) {
     }
   }, [stopCamera])
 
-  const capturePhoto = useCallback(async () => {
+  const handleUseSampleRoom = useCallback(() => {
+    if (isProcessing || isCameraOpen) return
+    processImageSource(SAMPLE_LUXURY_ROOM)
+  }, [isCameraOpen, isProcessing, processImageSource])
+
+  const capturePhoto = useCallback(() => {
     const video = videoRef.current
-    if (!video || !video.videoWidth || !video.videoHeight) return
+    if (!video?.videoWidth || !video.videoHeight) return
 
     const captureCanvas = document.createElement('canvas')
     captureCanvas.width = video.videoWidth
@@ -202,71 +302,128 @@ function AIVisualizer({ onAddToCart }) {
     ctx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height)
     const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.92)
 
-    revokeBlobUrl(uploadedImage)
-    setUploadedImage(dataUrl)
     stopCamera()
-    await runSegmentation(dataUrl)
-  }, [runSegmentation, stopCamera, uploadedImage])
+    processImageSource(dataUrl)
+  }, [processImageSource, stopCamera])
 
-  const handleFileChange = useCallback(
-    async (event) => {
-      const file = event.target.files?.[0]
-      if (!file) return
-
-      revokeBlobUrl(uploadedImage)
-
-      const objectUrl = URL.createObjectURL(file)
-      setUploadedImage(objectUrl)
-      await runSegmentation(objectUrl)
-
-      event.target.value = ''
-    },
-    [runSegmentation, uploadedImage],
-  )
-
-  const renderCanvas = useCallback(async () => {
-    const canvas = canvasRef.current
-    const mask = aiMaskCanvas
-    const photo = photoRef.current
-
-    if (!canvas || !mask || !photo) return
-
-    try {
-      const texture = await loadImageElement(selectedTexture)
-      const { width, height } = getRenderDimensions(photo.width, photo.height)
-
-      canvas.width = width
-      canvas.height = height
-
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-
-      ctx.globalCompositeOperation = 'source-over'
-      ctx.clearRect(0, 0, width, height)
-
-      ctx.drawImage(mask, 0, 0, width, height)
-
-      ctx.globalCompositeOperation = 'source-in'
-      ctx.drawImage(texture, 0, 0, width, height)
-
-      ctx.globalCompositeOperation = 'multiply'
-      ctx.drawImage(photo, 0, 0, width, height)
-
-      ctx.globalCompositeOperation = 'source-over'
-    } catch (renderError) {
-      console.error(renderError)
+  // Hook 1 — AI processing (runs only when uploadedImage changes)
+  useEffect(() => {
+    if (!uploadedImage) {
+      setProcessedMask(null)
+      return undefined
     }
-  }, [aiMaskCanvas, loadImageElement, selectedTexture])
 
-  useEffect(() => {
-    renderCanvas()
-  }, [renderCanvas])
+    let cancelled = false
 
+    async function runSegmentation() {
+      setIsProcessing(true)
+      setError(null)
+      setProcessedMask(null)
+
+      try {
+        const photo = await loadImage(uploadedImage)
+        if (cancelled) return
+
+        if (!segmenterRef.current) {
+          segmenterRef.current = await pipeline(
+            'image-segmentation',
+            'Xenova/segformer-b0-finetuned-ade-512-512',
+          )
+        }
+
+        if (cancelled) return
+
+        const output = await segmenterRef.current(uploadedImage)
+        if (cancelled) return
+
+        const { width, height } = getRenderDimensions(photo.width, photo.height)
+        const maskCanvas = buildBinaryWallMask(output, width, height)
+
+        if (!maskCanvas) {
+          throw new Error(
+            'Could not detect wall or tile surfaces. Try a clearer bathroom photo.',
+          )
+        }
+
+        setProcessedMask(maskCanvas)
+      } catch (segmentError) {
+        console.error(segmentError)
+        if (!cancelled) {
+          setProcessedMask(null)
+          setError(
+            segmentError instanceof Error
+              ? segmentError.message
+              : 'AI segmentation failed. Please try another photo.',
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setIsProcessing(false)
+        }
+      }
+    }
+
+    runSegmentation()
+
+    return () => {
+      cancelled = true
+    }
+  }, [uploadedImage])
+
+  // Hook 2 — canvas compositing (runs when mask, texture, or photo changes)
   useEffect(() => {
-    MARBLE_TEXTURES.forEach((src) => {
-      loadImageElement(src).catch(() => {})
-    })
-  }, [loadImageElement])
+    if (!processedMask || !uploadedImage) return undefined
+
+    let cancelled = false
+
+    async function compositeCanvas() {
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      try {
+        const [textureImg, photoImg] = await Promise.all([
+          loadImage(selectedTexture),
+          loadImage(uploadedImage),
+        ])
+
+        if (cancelled) return
+
+        const { width, height } = getRenderDimensions(
+          photoImg.width,
+          photoImg.height,
+        )
+
+        canvas.width = width
+        canvas.height = height
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+
+        // Step A — clear and draw binary wall mask
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.clearRect(0, 0, width, height)
+        ctx.drawImage(processedMask, 0, 0, width, height)
+
+        // Step B — marble clipped to wall pixels
+        ctx.globalCompositeOperation = 'source-in'
+        ctx.drawImage(textureImg, 0, 0, width, height)
+
+        // Step C — relight with original bathroom photo
+        ctx.globalCompositeOperation = 'multiply'
+        ctx.drawImage(photoImg, 0, 0, width, height)
+
+        ctx.globalCompositeOperation = 'source-over'
+      } catch (paintError) {
+        console.error(paintError)
+      }
+    }
+
+    compositeCanvas()
+
+    return () => {
+      cancelled = true
+    }
+  }, [processedMask, selectedTexture, uploadedImage])
 
   useEffect(() => {
     if (videoRef.current && cameraStream) {
@@ -276,9 +433,9 @@ function AIVisualizer({ onAddToCart }) {
 
   useEffect(() => {
     return () => {
-      revokeBlobUrl(uploadedImage)
+      revokeBlobUrl(uploadedImageRef.current)
     }
-  }, [uploadedImage])
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -291,9 +448,7 @@ function AIVisualizer({ onAddToCart }) {
     if (!isCameraOpen) return undefined
 
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        stopCamera()
-      }
+      if (event.key === 'Escape') stopCamera()
     }
 
     document.body.style.overflow = 'hidden'
@@ -311,30 +466,30 @@ function AIVisualizer({ onAddToCart }) {
 
   return (
     <div className="ai-visualizer">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileSelect}
+        style={{ display: 'none' }}
+      />
+
       <aside className="ai-visualizer-panel">
         <div className="ai-visualizer-header">
-          <span className="step-label">Step 3 of 3</span>
+          <span className="step-label">Step 2 of 2</span>
           <h2 className="ai-visualizer-title">AI Spatial Stone Visualizer</h2>
           <p className="ai-visualizer-subtitle">
-            Upload or capture your bathroom photo. Our on-device AI segments wall
-            surfaces and composites Grazia marble in real time.
+            Upload, drag-and-drop, or capture your bathroom photo. On-device AI
+            isolates wall surfaces and composites Grazia marble in real time.
           </p>
         </div>
 
         <div className="ai-upload-block">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="upload-zone-input"
-            onChange={handleFileChange}
-            disabled={isProcessing || isCameraOpen}
-          />
           <div className="ai-upload-actions">
             <button
               type="button"
               className="btn btn-ghost ai-upload-btn"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={openFilePicker}
               disabled={isProcessing || isCameraOpen}
             >
               Upload from Gallery
@@ -348,6 +503,14 @@ function AIVisualizer({ onAddToCart }) {
               Take Photo
             </button>
           </div>
+          <button
+            type="button"
+            className="btn btn-ghost upload-sample-btn"
+            disabled={isProcessing || isCameraOpen}
+            onClick={handleUseSampleRoom}
+          >
+            Or use our pre-mapped sample luxury room
+          </button>
         </div>
 
         {error && (
@@ -375,14 +538,36 @@ function AIVisualizer({ onAddToCart }) {
           type="button"
           className="btn btn-primary visualizer-add-btn"
           onClick={handleAddToCart}
-          disabled={!aiMaskCanvas}
+          disabled={!processedMask}
         >
           Add Selected Material to Cart
         </button>
       </aside>
 
       <div className="ai-visualizer-stage">
-        <div className="ai-canvas-frame">
+        <div
+          className={[
+            'ai-canvas-frame',
+            'ai-canvas-frame--interactive',
+            isDragOver && 'ai-canvas-frame--dragover',
+            isProcessing && 'ai-canvas-frame--processing',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          role="button"
+          tabIndex={isProcessing || isCameraOpen ? -1 : 0}
+          aria-label="Upload bathroom photo by clicking or dragging an image"
+          onClick={openFilePicker}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              openFilePicker()
+            }
+          }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           {!uploadedImage && !isProcessing && (
             <div className="ai-canvas-placeholder">
               <svg
@@ -398,7 +583,7 @@ function AIVisualizer({ onAddToCart }) {
                 <circle cx="9" cy="9" r="2" />
                 <path d="M12 19H6a2 2 0 01-2-2V7a2 2 0 012-2h1" />
               </svg>
-              <p>Upload or take a bathroom photo to begin AI wall segmentation</p>
+              <p>Click or drag a bathroom photo to begin AI wall segmentation</p>
             </div>
           )}
 
@@ -406,7 +591,7 @@ function AIVisualizer({ onAddToCart }) {
             <div className="ai-processing-overlay">
               <div className="processing-spinner" aria-hidden="true" />
               <p className="ai-processing-text">
-                AI Engine Segmenting Room Surfaces...
+                AI Neural Engine Segmenting Surfaces...
               </p>
             </div>
           )}
@@ -432,7 +617,7 @@ function AIVisualizer({ onAddToCart }) {
                   .filter(Boolean)
                   .join(' ')}
                 onClick={() => setSelectedTexture(item.image)}
-                disabled={!aiMaskCanvas || isProcessing}
+                disabled={!processedMask || isProcessing}
                 aria-pressed={selectedTexture === item.image}
                 aria-label={item.name}
               >
@@ -452,9 +637,12 @@ function AIVisualizer({ onAddToCart }) {
       </div>
 
       {isCameraOpen && (
-        <div className="camera-modal" role="dialog" aria-modal="true" aria-label="Camera capture">
-          <div className="camera-modal-backdrop" aria-hidden="true" />
-
+        <div
+          className="camera-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Camera capture"
+        >
           <button
             type="button"
             className="camera-cancel-btn"

@@ -1093,17 +1093,16 @@ a:hover {
 .camera-modal {
   position: fixed;
   inset: 0;
-  z-index: 300;
+  z-index: 9999;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  background: #000;
 }
 
 .camera-modal-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(28, 26, 23, 0.92);
+  display: none;
 }
 
 .camera-cancel-btn {
@@ -1226,6 +1225,32 @@ a:hover {
   overflow: hidden;
 }
 
+.ai-canvas-frame--interactive {
+  cursor: pointer;
+  transition:
+    border-color var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+.ai-canvas-frame--interactive:hover:not(.ai-canvas-frame--processing) {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px rgba(197, 160, 89, 0.45),
+    0 0 24px rgba(197, 160, 89, 0.18),
+    var(--shadow-lifted);
+}
+
+.ai-canvas-frame--dragover {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+  box-shadow: 0 0 0 2px rgba(197, 160, 89, 0.35);
+}
+
+.ai-canvas-frame--processing {
+  cursor: wait;
+  pointer-events: none;
+}
+
 .ai-canvas-placeholder {
   position: absolute;
   inset: 0;
@@ -1240,6 +1265,7 @@ a:hover {
   background: var(--bg-surface);
   color: var(--text-muted);
   font-size: 0.9375rem;
+  pointer-events: none;
 }
 
 .ai-processing-overlay {
