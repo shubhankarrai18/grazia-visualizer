@@ -402,6 +402,50 @@ a:hover {
     var(--shadow);
 }
 
+/* Mask edit toolbar tweaks: align Reset/Cancel and be mobile-friendly */
+.mask-edit-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 20;
+}
+.mask-edit-toolbar > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.mask-edit-toolbar .btn {
+  height: 36px;
+  align-self: center;
+  min-width: 88px;
+  padding: 0 12px;
+}
+.mask-edit-toolbar input[type='range'] {
+  width: 160px;
+  max-width: 40vw;
+}
+
+@media (max-width: 640px) {
+  .mask-edit-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .mask-edit-toolbar > div {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .mask-edit-toolbar .btn {
+    width: 100%;
+    min-width: 0;
+  }
+  .mask-edit-toolbar input[type='range'] {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
 .category-card--active:hover {
   border-color: var(--accent-hover);
   box-shadow:
